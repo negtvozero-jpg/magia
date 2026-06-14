@@ -176,6 +176,7 @@ body{
                     <div class="w-3/4 h-3/4 border border-dashed border-amber-500 rounded-full"></div>
                 </div>
             </div>
+            <div id="creator-help-bar" class="w-full py-1.5 px-3 bg-purple-950/20 border border-purple-500/10 rounded text-xs min-h-[34px] flex items-center justify-center text-slate-300 font-sans">Modo: Pincel Livre</div>
             <div class="w-full mt-2">
                 <label class="block text-left text-xs text-purple-300 font-semibold mb-1 uppercase tracking-wider">Nome</label>
                 <input type="text" id="custom-rune-name" placeholder="" class="w-full px-3 py-2 bg-slate-950/80 border border-purple-500/30 rounded text-sm text-slate-100 placeholder-purple-500/50 outline-none focus:border-amber-400 transition-all font-sans">
@@ -1407,8 +1408,7 @@ function updateCreatorHelpBar(){
 
     bar.innerHTML = `
         <div class="flex items-center justify-between w-full px-2">
-            <span>Modo: <strong class="text-amber-300 font-sans">${toolName}</strong></span>
-            ${(creatorStrokes.length > 0 || activeShape) ? `<button onclick="undoCreatorLastStroke()" class="text-purple-400 hover:text-purple-300 text-[10px] uppercase font-bold tracking-wider font-sans">↩ Desfazer</button>` : ''}
+            ${(creatorStrokes.length > 0 || activeShape) ? `<button onclick="undoCreatorLastStroke()" class="text-purple-400 hover:text-purple-300 text-[10px] uppercase font-bold tracking-wider font-sans">Desfazer</button>` : ''}
         </div>
     `;
 }
