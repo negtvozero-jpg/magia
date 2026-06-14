@@ -45,7 +45,7 @@ body{
 </head>
 <body class="min-h-screen text-slate-100 flex flex-col items-center justify-between p-4 overflow-x-hidden relative">
 
-<button id="restore-ui-btn" onclick="toggleUIVisibility()" class="fixed top-4 right-4 z-50 p-3 bg-amber-600/90 hover:bg-amber-500 active:scale-95 text-slate-950 font-bold rounded-full shadow-[0_0_15px_rgba(245,158,11,0.5)] transition-all duration-300 hidden uppercase text-xs tracking-wider">👁️</button>
+<button id="restore-ui-btn" onclick="toggleUIVisibility()" class="fixed top-4 right-4 z-50 p-3 bg-amber-600/90 hover:bg-amber-500 active:scale-95 text-slate-950 font-bold rounded-full shadow-[0_0_15px_rgba(245,158,11,0.5)] transition-all duration-300 hidden uppercase text-xs tracking-wider">Ver</button>
 
 <header id="main-header" class="w-full max-w-4xl text-center mb-2 z-10 ui-transition"></header>
 
@@ -102,7 +102,7 @@ body{
             </div>
         </div>
 
-        <button onclick="toggleUIVisibility()" class="w-full py-2.5 bg-slate-900 border border-purple-500/40 hover:border-purple-400 hover:bg-purple-950/30 text-purple-300 font-bold text-xs rounded-lg transition-all uppercase tracking-widest font-sans flex items-center justify-center gap-1.5"><span>👁️‍🗨️</span></button>
+        <button onclick="toggleUIVisibility()" class="w-full py-2.5 bg-slate-900 border border-purple-500/40 hover:border-purple-400 hover:bg-purple-950/30 text-purple-300 font-bold text-xs rounded-lg transition-all uppercase tracking-widest font-sans flex items-center justify-center gap-1.5"><span>Desver</span></button>
         <button onclick="generateNewGlyph()" class="w-full py-3 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 active:scale-95 text-slate-950 font-bold text-sm rounded-lg shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all duration-200 uppercase tracking-widest font-sans">NOVO</button>
     </div>
 
@@ -176,7 +176,6 @@ body{
                     <div class="w-3/4 h-3/4 border border-dashed border-amber-500 rounded-full"></div>
                 </div>
             </div>
-            <div id="creator-help-bar" class="w-full py-1.5 px-3 bg-purple-950/20 border border-purple-500/10 rounded text-xs min-h-[34px] flex items-center justify-center text-slate-300 font-sans">Modo: Pincel Livre</div>
             <div class="w-full mt-2">
                 <label class="block text-left text-xs text-purple-300 font-semibold mb-1 uppercase tracking-wider">Nome</label>
                 <input type="text" id="custom-rune-name" placeholder="" class="w-full px-3 py-2 bg-slate-950/80 border border-purple-500/30 rounded text-sm text-slate-100 placeholder-purple-500/50 outline-none focus:border-amber-400 transition-all font-sans">
@@ -595,7 +594,7 @@ function createItemRow(key, item, activeCountRef){
     if(isChecked) activeCountRef.count++;
 
     const isCustom = key.startsWith('custom_');
-    const typeLabel = item.type === 'symbol' ? `Símbolo · ${(item.difficulty || 'easy').toUpperCase()}` : 'Runa';
+    const typeLabel = item.type === 'symbol' ? `Runa · ${(item.difficulty || 'easy').toUpperCase()}` : 'Sigilo';
     const disabledByDifficulty = item.type === 'symbol' && !symbolAllowedForCurrentDifficulty(item);
 
     const itemEl = document.createElement('div');
@@ -707,8 +706,8 @@ function generateNewGlyph(){
     });
 
     if(symbolPool.length === 0){
-        activeItems.triangle = true;
-        symbolPool = ['triangle'];
+        activeItems.square = true;
+        symbolPool = ['square'];
         renderRuneCheckboxes();
     }
     if(runePool.length === 0){
@@ -728,15 +727,16 @@ function generateNewGlyph(){
 
         // Zona central reservada: o símbolo não deve invadir o anel das runas.
         // Quanto mais runas, menor o símbolo central para manter leitura visual.
-        const centerScale = runeCount >= 7 ? .42 : runeCount >= 4 ? .45 : .48;
+        const centerScale = runeCount >= 7 ? .32 : runeCount >= 4 ? .37 : .45;
         const config = { scale: centerScale, rotation: 0, offsetX: 0, offsetY: 0 };
         addShapeToGlyph(symbolData.name, paths, config);
     }
 
-    // Anel externo reservado para runas.
-    // O centro das runas fica bem mais próximo do círculo externo para não cruzar o símbolo central.
-    const ringRadius = outerR * .80;
-    const runeScale = runeCount <= 2 ? .20 : runeCount <= 4 ? .18 : runeCount <= 6 ? .16 : .14;
+    // Anel externo reservado para sigilos.
+    // Mantém os sigilos afastados do círculo externo e fora da zona central da runa.
+    // ringRadius menor = sigilos mais para dentro; scale menor = menos risco de encostar no círculo.
+    const ringRadius = outerR * .68;
+    const runeScale = runeCount <= 2 ? .18 : runeCount <= 4 ? .16 : runeCount <= 6 ? .145 : .125;
 
     for(let i = 0; i < runeCount; i++){
         const runeKey = randomFrom(runePool); // com repetição proposital
@@ -747,7 +747,7 @@ function generateNewGlyph(){
         const ox = ringRadius * Math.cos(angle);
         const oy = ringRadius * Math.sin(angle);
 
-        // O topo local da runa é o eixo Y negativo. Esta rotação faz o topo apontar para o centro.
+        // O topo local do sigilo é o eixo Y negativo. Esta rotação faz o topo apontar para o centro.
         const rotation = angle - Math.PI / 2;
 
         addShapeToGlyph(runeData.name, paths, {
@@ -1408,7 +1408,7 @@ function updateCreatorHelpBar(){
     bar.innerHTML = `
         <div class="flex items-center justify-between w-full px-2">
             <span>Modo: <strong class="text-amber-300 font-sans">${toolName}</strong></span>
-            ${(creatorStrokes.length > 0 || activeShape) ? `<button onclick="undoCreatorLastStroke()" class="text-purple-400 hover:text-purple-300 text-[10px] uppercase font-bold tracking-wider font-sans">↩️ Desfazer</button>` : ''}
+            ${(creatorStrokes.length > 0 || activeShape) ? `<button onclick="undoCreatorLastStroke()" class="text-purple-400 hover:text-purple-300 text-[10px] uppercase font-bold tracking-wider font-sans">↩ Desfazer</button>` : ''}
         </div>
     `;
 }
@@ -1491,8 +1491,8 @@ function saveCustomRune(){
 
     const nameInput = document.getElementById('custom-rune-name');
     const fallback = creatorCategory === 'symbol'
-        ? `Símbolo ${Object.keys(customItems).length + 1}`
-        : `Runa ${Object.keys(customItems).length + 1}`;
+        ? `Runa ${Object.keys(customItems).length + 1}`
+        : `Sigilo ${Object.keys(customItems).length + 1}`;
     const name = nameInput.value.trim() || fallback;
 
     if(creatorStrokes.length === 0 || creatorStrokes.every(s => s.length < 2)) return;
