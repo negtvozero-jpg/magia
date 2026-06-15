@@ -130,7 +130,7 @@ details[open] > summary::after {
                 <div>
                     <div class="flex justify-between text-xs text-purple-300 mb-1"><span id="circle-progress" class="font-bold text-blue-400">0%</span></div>
                     <div class="w-full bg-slate-950/60 rounded-full h-3 border border-purple-500/20 overflow-hidden p-[2px]">
-                        <div id="circle-bar" class="bg-gradient-to-r from-blue-600 to-cyan-400 h-full rounded-full transition-all duration-300" style="width:0%"></div>
+                        <div id="circle-bar" class="bg-gradient-to-r from-blue-600 to-cyan-400 h-full rounded-full transition-all duration-300" style=":0%"></div>
                     </div>
                 </div>
             </div>
@@ -158,7 +158,7 @@ details[open] > summary::after {
 
         <div class="relative bg-[#1e172a] rounded-full p-4 border-[6px] border-amber-900/60 shadow-[0_0_50px_rgba(139,92,246,0.15)] flex items-center justify-center">
             <div class="absolute inset-0 rounded-full bg-purple-900/20 animate-pulse blur-3xl pointer-events-none"></div>
-            <canvas id="game-canvas" width="520" height="520" class="relative rounded-full bg-[#181124] shadow-inner cursor-crosshair border border-purple-500/20 touch-none w-[520px] h-[520px] max-w-[88vw] max-h-[88vw]"></canvas>
+            <canvas id="game-canvas" ="520" height="520" class="relative rounded-full bg-[#181124] shadow-inner cursor-crosshair border border-purple-500/20 touch-none w-[520px] h-[520px] max-w-[88vw] max-h-[88vw]"></canvas>
             <div id="status-overlay" class="absolute inset-0 rounded-full bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center transition-all duration-500 opacity-0 pointer-events-none">
                 <div id="overlay-content" class="scale-95 transition-all duration-500"></div>
             </div>
@@ -231,7 +231,7 @@ details[open] > summary::after {
 
         <div class="flex flex-col items-center gap-2">
             <div class="relative bg-[#150f1f] rounded-xl p-2 border-2 border-purple-500/25">
-                <canvas id="creator-canvas" width="220" height="220" class="bg-[#120a1a] rounded-lg cursor-crosshair border border-purple-500/10 touch-none"></canvas>
+                <canvas id="creator-canvas" ="220" height="220" class="bg-[#120a1a] rounded-lg cursor-crosshair border border-purple-500/10 touch-none"></canvas>
                 <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
                     <div class="w-full h-[1px] bg-amber-500"></div>
                     <div class="h-full w-[1px] bg-amber-500 absolute"></div>
@@ -442,7 +442,7 @@ let creatorDifficulty = 'easy';
 const DRAW_COLOR = '#a78bfa';
 const GLOW_COLOR = '#c084fc';
 const TEMPLATE_COLOR = 'rgba(217,119,6,.22)';
-const LINE_WIDTH = 2;
+const LINE_WIDTH = 3;
 
 const CUSTOM_ITEMS_STORAGE_KEY = 'scribble_arcana_custom_items_v2';
 const ACTIVE_ITEMS_STORAGE_KEY = 'scribble_arcana_active_items_v2';
