@@ -1,39 +1,38 @@
-import { list } from '@vercel/blob';
+import { list } from "@vercel/blob";
 
-const BLOB_PATH = 'grimorio/grimorio.json';
+const FILE_PATH = "grimorio/grimorio.json";
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.status(405).json({ error: 'Método não permitido.' });
-    return;
-  }
-
   try {
-    const result = await list({
-      prefix: BLOB_PATH,
+    const { blobs } = await list({
+      prefix: FILE_PATH,
       limit: 1
     });
 
-    const blob = result.blobs.find((item) => item.pathname === BLOB_PATH);
+    const blob = blobs.find(item => item.pathname === FILE_PATH);
 
     if (!blob) {
-      res.status(404).json({ customItems: {}, activeItems: {} });
-      return;
+      return res.status(200).json({
+        ok: true,
+        exists: false,
+        data: null
+      });
     }
 
-    const blobResponse = await fetch(blob.url, { cache: 'no-store' });
+    const response = await fetch(blob.downloadUrl);
+    const data = await response.json();
 
-    if (!blobResponse.ok) {
-      res.status(502).json({ error: 'Falha ao ler Blob.' });
-      return;
-    }
-
-    const data = await blobResponse.json();
-
-    res.setHeader('cache-control', 'no-store');
-    res.status(200).json(data);
+    return res.status(200).json({
+      ok: true,
+      exists: true,
+      data
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erro ao carregar grimório.' });
+    console.error("Erro ao carregar grimório:", err);
+
+    return res.status(500).json({
+      ok: false,
+      error: err.message || "Erro ao carregar grimório."
+    });
   }
 }
