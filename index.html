@@ -520,32 +520,26 @@ function mergeCloudPayloadIntoLocal(payload){
 
     saveCustomItemsToStorage();
 }
-async function loadFromCloud({ merge = true } = {}) {
+
+async function loadFromCloud({ merge = true } = {}){
     const response = await fetch('/api/load-grimoire', {
         method: 'GET'
     });
 
-    if (response.status === 404) {
+    if(response.status === 404){
         return { customItems: {}, activeItems: {} };
     }
 
-    if (!response.ok) {
+    if(!response.ok){
         throw new Error(`Falha ao carregar nuvem: ${response.status}`);
     }
 
-    const result = await response.json();
+    const payload = await response.json();
 
-    const payload = result && result.data
-        ? result.data
-        : result;
-
-    if (merge) {
+    if(merge){
         mergeCloudPayloadIntoLocal(payload);
         renderRuneCheckboxes();
-
-        if (!gameStarted) {
-            generateNewGlyph();
-        }
+        if(!gameStarted) generateNewGlyph();
     }
 
     return payload;
@@ -1426,29 +1420,51 @@ function calculateScore(){
 
     // O círculo externo é requisito de fechamento, mas não pode dominar a nota.
     // A parte interna agora vale a maior parte da precisão.
-    let rawAccuracy =
-        (innerMetrics.coverage * 0.42) +
-        (innerMetrics.precision * 0.24) +
-        (circleMetrics.coverage * 0.12) +
-        (circleMetrics.precision * 0.06) +
-        (cleanliness.nearTemplateRatio * 0.10) +
-        (cleanliness.cleanliness * 0.06);
+let rawAccuracy =
+    (innerMetrics.coverage * 0.55) +
+    (innerMetrics.precision * 0.30) +
+    (circleMetrics.coverage * 0.10) +
+    (circleMetrics.precision * 0.05);
 
-    const missingInnerPenalty = Math.max(0, 0.68 - innerMetrics.coverage) * (
-        currentDifficulty === 'hard' ? 62 : currentDifficulty === 'medium' ? 48 : 34
-    );
+    if (currentDifficulty === 'hard') {
+    rawAccuracy =
+        (innerMetrics.coverage * 0.62) +
+        (innerMetrics.precision * 0.28) +
+        (circleMetrics.coverage * 0.07) +
+        (circleMetrics.precision * 0.03);
+}
 
-    const offTemplatePenalty = cleanliness.offTemplateRatio * (
-        currentDifficulty === 'hard' ? 38 : currentDifficulty === 'medium' ? 28 : 18
-    );
+const missingInnerPenalty = Math.pow(
+    Math.max(0, 0.72 - innerMetrics.coverage) / 0.72,
+    1.15
+) * (
+    currentDifficulty === 'hard' ? 58 :
+    currentDifficulty === 'medium' ? 44 :
+    30
+);
+
+const offTemplatePenalty = Math.pow(
+    cleanliness.offTemplateRatio,
+    1.1
+) * (
+    currentDifficulty === 'hard' ? 55 :
+    currentDifficulty === 'medium' ? 40 :
+    26
+);
 
     // Cap duro: se a runa/sigilos internos quase não foram desenhados, não existe nota alta,
     // mesmo que o círculo esteja fechado. Isto corrige casos como círculo bom + centro ignorado.
-    let accuracyCap = 100;
-    if(innerMetrics.coverage < 0.16) accuracyCap = currentDifficulty === 'hard' ? 12 : 18;
-    else if(innerMetrics.coverage < 0.28) accuracyCap = currentDifficulty === 'hard' ? 22 : 30;
-    else if(innerMetrics.coverage < 0.42) accuracyCap = currentDifficulty === 'hard' ? 36 : 44;
-    else if(innerMetrics.coverage < 0.55) accuracyCap = currentDifficulty === 'hard' ? 52 : 60;
+let accuracyCap = 100;
+
+if (innerMetrics.coverage < 0.16) {
+    accuracyCap = currentDifficulty === 'hard' ? 10 : 16;
+} else if (innerMetrics.coverage < 0.28) {
+    accuracyCap = currentDifficulty === 'hard' ? 18 : 26;
+} else if (innerMetrics.coverage < 0.42) {
+    accuracyCap = currentDifficulty === 'hard' ? 30 : 40;
+} else if (innerMetrics.coverage < 0.55) {
+    accuracyCap = currentDifficulty === 'hard' ? 45 : 55;
+}
 
     const finalAccuracyPercentage = Math.max(
         0,
@@ -1498,6 +1514,13 @@ function calculateScore(){
 
     const diffLabel = currentDifficulty === 'easy' ? 'Fácil' : currentDifficulty === 'medium' ? 'Médio' : 'Difícil';
     const labelTime = currentTimeMode === 'custom' ? `${customTimeValue}s` : TIME_MODES[currentTimeMode].label;
+
+    console.log({
+    rawAccuracy,
+    missingInnerPenalty,
+    offTemplatePenalty,
+    finalAccuracyPercentage
+});
 
     return {
         score: Math.min(20, Math.max(1, calculatedScore)),
