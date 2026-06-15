@@ -46,7 +46,7 @@ export default async function handler(req, res) {
       BLOB_PATH,
       JSON.stringify(payload, null, 2),
       {
-        access: 'public',
+        access: 'private',
         contentType: 'application/json',
         allowOverwrite: true,
         cacheControlMaxAge: 0
