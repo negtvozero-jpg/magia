@@ -520,26 +520,32 @@ function mergeCloudPayloadIntoLocal(payload){
 
     saveCustomItemsToStorage();
 }
-
-async function loadFromCloud({ merge = true } = {}){
+async function loadFromCloud({ merge = true } = {}) {
     const response = await fetch('/api/load-grimoire', {
         method: 'GET'
     });
 
-    if(response.status === 404){
+    if (response.status === 404) {
         return { customItems: {}, activeItems: {} };
     }
 
-    if(!response.ok){
+    if (!response.ok) {
         throw new Error(`Falha ao carregar nuvem: ${response.status}`);
     }
 
-    const payload = await response.json();
+    const result = await response.json();
 
-    if(merge){
+    const payload = result && result.data
+        ? result.data
+        : result;
+
+    if (merge) {
         mergeCloudPayloadIntoLocal(payload);
         renderRuneCheckboxes();
-        if(!gameStarted) generateNewGlyph();
+
+        if (!gameStarted) {
+            generateNewGlyph();
+        }
     }
 
     return payload;
