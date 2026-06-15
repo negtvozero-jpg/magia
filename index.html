@@ -141,6 +141,17 @@ body{
                 <span id="symbols-count" class="text-xs text-purple-400 font-normal">0 ativos</span>
             </h3>
             <div id="runes-checkbox-container" class="space-y-1.5 overflow-y-auto pr-1 flex-1 min-h-0"></div>
+
+            <div class="mt-3 grid grid-cols-2 gap-2">
+                <button onclick="manualSaveToCloud()" class="py-2 border border-blue-500/40 hover:border-blue-400 rounded bg-blue-950/20 hover:bg-blue-900/30 text-blue-300 font-bold transition-all text-[10px] uppercase tracking-wider font-sans">
+                    Salvar nuvem
+                </button>
+                <button onclick="manualLoadFromCloud()" class="py-2 border border-purple-500/40 hover:border-purple-400 rounded bg-purple-950/20 hover:bg-purple-900/30 text-purple-300 font-bold transition-all text-[10px] uppercase tracking-wider font-sans">
+                    Carregar
+                </button>
+            </div>
+            <div id="cloud-sync-status" class="mt-2 min-h-[18px] text-[10px] text-purple-400 font-sans text-center"></div>
+
             <button onclick="openCreatorModal()" class="w-full mt-3 py-2 border border-amber-500/40 hover:border-amber-400 rounded bg-amber-950/20 hover:bg-amber-900/30 text-amber-300 font-bold transition-all text-xs uppercase tracking-wider font-sans flex items-center justify-center gap-1.5"><span>+</span></button>
         </div>
     </div>
@@ -380,12 +391,18 @@ let creatorDifficulty = 'easy';
 const DRAW_COLOR = '#a78bfa';
 const GLOW_COLOR = '#c084fc';
 const TEMPLATE_COLOR = 'rgba(217,119,6,.22)';
-const LINE_WIDTH = 7;
+const LINE_WIDTH = 5;
 
 const CUSTOM_ITEMS_STORAGE_KEY = 'scribble_arcana_custom_items_v2';
 const ACTIVE_ITEMS_STORAGE_KEY = 'scribble_arcana_active_items_v2';
 const LEGACY_CUSTOM_RUNES_STORAGE_KEY = 'scribble_arcana_custom_runes_v1';
 const LEGACY_ACTIVE_RUNES_STORAGE_KEY = 'scribble_arcana_active_runes_v1';
+
+const CLOUD_SECRET_STORAGE_KEY = 'scribble_arcana_cloud_secret_v1';
+let cloudSyncReady = false;
+let cloudSyncInProgress = false;
+let pendingCloudSave = null;
+let lastCloudSaveAt = 0;
 
 function safeJsonParse(raw, fallback){
     try{ return raw ? JSON.parse(raw) : fallback; }
@@ -432,6 +449,178 @@ function saveCustomItemsToStorage(){
     }
 }
 
+function getCloudSecret(){
+    let secret = localStorage.getItem(CLOUD_SECRET_STORAGE_KEY) || '';
+    if(secret) return secret;
+
+    secret = window.prompt('Senha para salvar na nuvem:') || '';
+    secret = secret.trim();
+
+    if(secret){
+        localStorage.setItem(CLOUD_SECRET_STORAGE_KEY, secret);
+    }
+
+    return secret;
+}
+
+function setCloudStatus(message, tone = 'neutral'){
+    const el = document.getElementById('cloud-sync-status');
+    if(!el) return;
+
+    el.textContent = message || '';
+    el.classList.remove('text-purple-400', 'text-emerald-400', 'text-amber-400', 'text-red-400');
+
+    if(tone === 'ok') el.classList.add('text-emerald-400');
+    else if(tone === 'warn') el.classList.add('text-amber-400');
+    else if(tone === 'error') el.classList.add('text-red-400');
+    else el.classList.add('text-purple-400');
+}
+
+function getGrimoirePayload(){
+    return {
+        version: 2,
+        updatedAt: new Date().toISOString(),
+        customItems,
+        activeItems
+    };
+}
+
+function normalizeCloudPayload(payload){
+    if(!payload || typeof payload !== 'object') {
+        return { customItems: {}, activeItems: {} };
+    }
+
+    return {
+        customItems: payload.customItems && typeof payload.customItems === 'object' ? payload.customItems : {},
+        activeItems: payload.activeItems && typeof payload.activeItems === 'object' ? payload.activeItems : {}
+    };
+}
+
+function mergeCloudPayloadIntoLocal(payload){
+    const normalized = normalizeCloudPayload(payload);
+
+    // União conservadora: nunca remove designs locais do tablet.
+    customItems = {
+        ...normalized.customItems,
+        ...customItems
+    };
+
+    activeItems = {
+        ...normalized.activeItems,
+        ...activeItems
+    };
+
+    Object.keys(BASE_ITEMS).forEach(key => {
+        if(activeItems[key] === undefined) activeItems[key] = true;
+    });
+
+    Object.keys(customItems).forEach(key => {
+        if(activeItems[key] === undefined) activeItems[key] = true;
+    });
+
+    saveCustomItemsToStorage();
+}
+
+async function loadFromCloud({ merge = true } = {}){
+    const response = await fetch('/api/load-grimoire', {
+        method: 'GET'
+    });
+
+    if(response.status === 404){
+        return { customItems: {}, activeItems: {} };
+    }
+
+    if(!response.ok){
+        throw new Error(`Falha ao carregar nuvem: ${response.status}`);
+    }
+
+    const payload = await response.json();
+
+    if(merge){
+        mergeCloudPayloadIntoLocal(payload);
+        renderRuneCheckboxes();
+        if(!gameStarted) generateNewGlyph();
+    }
+
+    return payload;
+}
+
+async function saveToCloudNow(){
+    const secret = getCloudSecret();
+    if(!secret){
+        setCloudStatus('Nuvem sem senha', 'warn');
+        return false;
+    }
+
+    const now = Date.now();
+    if(now - lastCloudSaveAt < 1200){
+        return false;
+    }
+
+    lastCloudSaveAt = now;
+    setCloudStatus('Salvando na nuvem...', 'neutral');
+
+    const response = await fetch('/api/save-grimoire', {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            'x-admin-secret': secret
+        },
+        body: JSON.stringify(getGrimoirePayload())
+    });
+
+    if(!response.ok){
+        throw new Error(`Falha ao salvar nuvem: ${response.status}`);
+    }
+
+    setCloudStatus('Grimório salvo na nuvem', 'ok');
+    return true;
+}
+
+function queueCloudSave(){
+    // Intencionalmente desativado: alterações de jogadores ficam só no localStorage.
+    // A nuvem só é sobrescrita pelo botão manual "Salvar nuvem", que exige senha.
+}
+
+async function initializeCloudSync(){
+    try{
+        setCloudStatus('Carregando grimório da nuvem...', 'neutral');
+
+        const cloudPayload = await loadFromCloud({ merge: true });
+        cloudSyncReady = true;
+
+        const localCount = Object.keys(customItems).length;
+        setCloudStatus(cloudPayload ? `Nuvem carregada (${localCount} designs locais)` : 'Sem grimório na nuvem. LocalStorage preservado.', cloudPayload ? 'ok' : 'warn');
+    }catch(err){
+        console.warn(err);
+        cloudSyncReady = false;
+        setCloudStatus('Falha ao carregar nuvem. LocalStorage preservado.', 'error');
+    }
+}
+
+async function manualSaveToCloud(){
+    try{
+        cloudSyncReady = true;
+        await saveToCloudNow();
+    }catch(err){
+        console.warn(err);
+        setCloudStatus('Erro ao salvar nuvem', 'error');
+    }
+}
+
+async function manualLoadFromCloud(){
+    try{
+        setCloudStatus('Carregando nuvem...', 'neutral');
+        await loadFromCloud({ merge: true });
+        saveCustomItemsToStorage();
+        setCloudStatus('Nuvem carregada e mesclada', 'ok');
+    }catch(err){
+        console.warn(err);
+        setCloudStatus('Erro ao carregar nuvem', 'error');
+    }
+}
+
+
 function allItems(){
     return { ...BASE_ITEMS, ...customItems };
 }
@@ -443,6 +632,89 @@ function getItemPaths(item){
 function randomFrom(arr){
     return arr[Math.floor(Math.random() * arr.length)];
 }
+
+function weightedRandomRuneKey(pool, items){
+    if(!pool.length) return null;
+
+    const currentRank = DIFFICULTY_RANK[currentDifficulty] || 1;
+    const weighted = [];
+
+    pool.forEach(key => {
+        const item = items[key];
+        const itemRank = DIFFICULTY_RANK[item.difficulty || 'easy'] || 1;
+        let weight = 1;
+
+        if(item.type === 'symbol'){
+            if(itemRank === currentRank) weight = 6;
+            else if(itemRank === currentRank - 1) weight = 2;
+            else weight = 1;
+        }
+
+        for(let i = 0; i < weight; i++){
+            weighted.push(key);
+        }
+    });
+
+    return randomFrom(weighted);
+}
+
+function distanceToTemplatePoint(x, y, guidePoints){
+    let minDist = 9999;
+    for(let i = 0; i < guidePoints.length; i++){
+        const guidePt = guidePoints[i];
+        const dist = Math.hypot(guidePt.x - x, guidePt.y - y);
+        if(dist < minDist) minDist = dist;
+    }
+    return minDist;
+}
+
+function getScoringGuidePoints(){
+    const targetGuidePoints = [...currentGlyphTemplate.innerPoints];
+
+    const cx = currentGlyphTemplate.circle.cx;
+    const cy = currentGlyphTemplate.circle.cy;
+    const r = currentGlyphTemplate.circle.r;
+
+    for(let a = 0; a < Math.PI * 2; a += .075){
+        targetGuidePoints.push({
+            x: cx + r * Math.cos(a),
+            y: cy + r * Math.sin(a)
+        });
+    }
+
+    return targetGuidePoints;
+}
+
+function samplePlayerPointsForScore(){
+    const sampled = [];
+    for(let i = 0; i < playerPoints.length; i++){
+        const p = playerPoints[i];
+        if(i === 0 || p.isNewStroke){
+            sampled.push(p);
+            continue;
+        }
+
+        const prev = playerPoints[i - 1];
+        if(prev.isNewStroke) {
+            sampled.push(p);
+            continue;
+        }
+
+        const dist = Math.hypot(p.x - prev.x, p.y - prev.y);
+        const steps = Math.max(1, Math.ceil(dist / 5));
+
+        for(let j = 1; j <= steps; j++){
+            const t = j / steps;
+            sampled.push({
+                x: prev.x + (p.x - prev.x) * t,
+                y: prev.y + (p.y - prev.y) * t
+            });
+        }
+    }
+
+    return sampled;
+}
+
 
 function symbolAllowedForCurrentDifficulty(item){
     if(item.type !== 'symbol') return false;
@@ -498,7 +770,7 @@ function deleteCustomRune(key){
     if(!gameStarted) generateNewGlyph();
 }
 
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
     renderQuantityButtons();
     loadCustomItems();
     renderRuneCheckboxes();
@@ -507,6 +779,7 @@ window.addEventListener('load', () => {
     setSimultaneousSymbols(1);
     setCreatorCategory('rune');
     setCreatorDifficulty('easy');
+    await initializeCloudSync();
     generateNewGlyph();
 });
 
@@ -722,7 +995,7 @@ function generateNewGlyph(){
     const runeCount = hasCenterSymbol ? Math.max(0, total - 1) : total;
 
     if(hasCenterSymbol){
-        const symbolKey = randomFrom(symbolPool);
+        const symbolKey = weightedRandomRuneKey(symbolPool, items);
         const symbolData = items[symbolKey];
         const paths = getItemPaths(symbolData);
 
@@ -990,7 +1263,7 @@ function trackCircleProgress(x, y){
 
     // O círculo externo agora é maior. A tolerância precisa ser mais generosa,
     // senão o jogador desenha visualmente sobre o guia mas o sistema não conta fatias.
-    const tolerance = 54;
+    const tolerance = 44;
 
     if(Math.abs(distFromCenter - r) <= tolerance){
         const angle = Math.atan2(y - cy, x - cx);
@@ -1018,18 +1291,22 @@ function checkCircleClosure(){
     const coverageRatio = coveredSlices / circleProgressTrack.length;
     let isClosed = false;
 
-    // Fechamento manual: antes estava exigente para um círculo de raio 210.
-    // Agora aceita fechamento visual mais natural, sem exigir precisão perfeita.
-    if(circleDrawnPoints.length > 8 && coverageRatio >= .68){
+    // Mais rígido: o círculo precisa estar realmente quase completo.
+    // No difícil, evita encerrar quando o jogador ainda fez só um arco torto ou largo.
+    const minCoverageToClose = currentDifficulty === 'hard' ? .90 : currentDifficulty === 'medium' ? .87 : .84;
+    const maxEndpointDistance = currentDifficulty === 'hard' ? 32 : currentDifficulty === 'medium' ? 38 : 46;
+    const fullCoverageClose = currentDifficulty === 'hard' ? .98 : currentDifficulty === 'medium' ? .96 : .94;
+
+    if(circleDrawnPoints.length > 24 && coverageRatio >= minCoverageToClose){
         const startPt = circleDrawnPoints[0];
         const latestPt = circleDrawnPoints[circleDrawnPoints.length - 1];
         const dist = Math.hypot(latestPt.x - startPt.x, latestPt.y - startPt.y);
 
-        if(dist <= 58) isClosed = true;
+        if(dist <= maxEndpointDistance) isClosed = true;
     }
 
-    // Fechamento por cobertura: com 72 fatias, 88% já representa um círculo suficientemente completo.
-    if(coverageRatio >= .88) isClosed = true;
+    // Fechamento por cobertura só acontece quando praticamente todo o círculo foi coberto.
+    if(coverageRatio >= fullCoverageClose) isClosed = true;
 
     if(isClosed) endGame(true, 'success');
 }
@@ -1056,59 +1333,143 @@ function endGame(success, reason){
     }
 }
 
+
+function buildCircleGuidePoints(){
+    const points = [];
+    const cx = currentGlyphTemplate.circle.cx;
+    const cy = currentGlyphTemplate.circle.cy;
+    const r = currentGlyphTemplate.circle.r;
+
+    for(let a = 0; a < Math.PI * 2; a += .085){
+        points.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+    }
+
+    return points;
+}
+
+function measureGuideCoverage(guidePoints, sampledPlayerPoints, distanceThreshold, clampDistance){
+    if(!guidePoints.length || !sampledPlayerPoints.length){
+        return { coverage: 0, precision: 0, avgDeviation: clampDistance };
+    }
+
+    let hitCount = 0;
+    let sumMinDist = 0;
+
+    guidePoints.forEach(guidePt => {
+        let minDist = 9999;
+        sampledPlayerPoints.forEach(playerPt => {
+            const dist = Math.hypot(guidePt.x - playerPt.x, guidePt.y - playerPt.y);
+            if(dist < minDist) minDist = dist;
+        });
+
+        if(minDist <= distanceThreshold) hitCount++;
+        sumMinDist += Math.min(minDist, clampDistance);
+    });
+
+    const avgDeviation = sumMinDist / guidePoints.length;
+    return {
+        coverage: hitCount / guidePoints.length,
+        precision: Math.max(0, 1 - (avgDeviation / (distanceThreshold * 1.55))),
+        avgDeviation
+    };
+}
+
+function measurePlayerCleanliness(sampledPlayerPoints, guidePoints, offTemplateThreshold){
+    if(!sampledPlayerPoints.length || !guidePoints.length){
+        return { offTemplateRatio: 1, nearTemplateRatio: 0, cleanliness: 0, avgPlayerDeviation: 80 };
+    }
+
+    let offTemplateCount = 0;
+    let nearTemplateCount = 0;
+    let playerDistanceSum = 0;
+
+    sampledPlayerPoints.forEach(playerPt => {
+        const minDist = distanceToTemplatePoint(playerPt.x, playerPt.y, guidePoints);
+        playerDistanceSum += Math.min(minDist, 80);
+
+        if(minDist <= offTemplateThreshold) nearTemplateCount++;
+        else offTemplateCount++;
+    });
+
+    const avgPlayerDeviation = playerDistanceSum / sampledPlayerPoints.length;
+
+    return {
+        offTemplateRatio: offTemplateCount / sampledPlayerPoints.length,
+        nearTemplateRatio: nearTemplateCount / sampledPlayerPoints.length,
+        cleanliness: Math.max(0, 1 - (avgPlayerDeviation / 36)),
+        avgPlayerDeviation
+    };
+}
+
 function calculateScore(){
     const activeLimit = currentTimeMode === 'custom' ? customTimeValue : TIME_MODES[currentTimeMode].value;
     let timeUsed = 0;
     if(startTime !== null) timeUsed = (Date.now() - startTime) / 1000;
 
-    const distanceThreshold = 24;
-    let templateMatchCount = 0;
-    const targetGuidePoints = [...currentGlyphTemplate.innerPoints];
+    const distanceThreshold = currentDifficulty === 'hard' ? 15 : currentDifficulty === 'medium' ? 18 : 22;
+    const offTemplateThreshold = currentDifficulty === 'hard' ? 23 : currentDifficulty === 'medium' ? 28 : 36;
 
-    const cx = currentGlyphTemplate.circle.cx;
-    const cy = currentGlyphTemplate.circle.cy;
-    const r = currentGlyphTemplate.circle.r;
-    for(let a = 0; a < Math.PI * 2; a += .1){
-        targetGuidePoints.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
-    }
+    const sampledPlayerPoints = samplePlayerPointsForScore();
+    const innerGuidePoints = [...currentGlyphTemplate.innerPoints];
+    const circleGuidePoints = buildCircleGuidePoints();
+    const allGuidePoints = [...innerGuidePoints, ...circleGuidePoints];
 
-    let sumMinDist = 0;
-    targetGuidePoints.forEach(guidePt => {
-        let minDist = 9999;
-        playerPoints.forEach(playerPt => {
-            const dist = Math.hypot(guidePt.x - playerPt.x, guidePt.y - playerPt.y);
-            if(dist < minDist) minDist = dist;
-        });
+    const innerMetrics = measureGuideCoverage(innerGuidePoints, sampledPlayerPoints, distanceThreshold, 60);
+    const circleMetrics = measureGuideCoverage(circleGuidePoints, sampledPlayerPoints, distanceThreshold + 3, 60);
+    const cleanliness = measurePlayerCleanliness(sampledPlayerPoints, allGuidePoints, offTemplateThreshold);
 
-        if(minDist <= distanceThreshold) templateMatchCount++;
-        sumMinDist += Math.min(minDist, 45);
-    });
+    // O círculo externo é requisito de fechamento, mas não pode dominar a nota.
+    // A parte interna agora vale a maior parte da precisão.
+    let rawAccuracy =
+        (innerMetrics.coverage * 0.42) +
+        (innerMetrics.precision * 0.24) +
+        (circleMetrics.coverage * 0.12) +
+        (circleMetrics.precision * 0.06) +
+        (cleanliness.nearTemplateRatio * 0.10) +
+        (cleanliness.cleanliness * 0.06);
 
-    const coverageRate = targetGuidePoints.length ? templateMatchCount / targetGuidePoints.length : 0;
-    const avgDeviation = targetGuidePoints.length ? sumMinDist / targetGuidePoints.length : 45;
-    const precisionFactor = Math.max(0, 1 - (avgDeviation / 25));
-    const finalAccuracyPercentage = Math.round(((coverageRate * .45) + (precisionFactor * .55)) * 100);
+    const missingInnerPenalty = Math.max(0, 0.68 - innerMetrics.coverage) * (
+        currentDifficulty === 'hard' ? 62 : currentDifficulty === 'medium' ? 48 : 34
+    );
+
+    const offTemplatePenalty = cleanliness.offTemplateRatio * (
+        currentDifficulty === 'hard' ? 38 : currentDifficulty === 'medium' ? 28 : 18
+    );
+
+    // Cap duro: se a runa/sigilos internos quase não foram desenhados, não existe nota alta,
+    // mesmo que o círculo esteja fechado. Isto corrige casos como círculo bom + centro ignorado.
+    let accuracyCap = 100;
+    if(innerMetrics.coverage < 0.16) accuracyCap = currentDifficulty === 'hard' ? 12 : 18;
+    else if(innerMetrics.coverage < 0.28) accuracyCap = currentDifficulty === 'hard' ? 22 : 30;
+    else if(innerMetrics.coverage < 0.42) accuracyCap = currentDifficulty === 'hard' ? 36 : 44;
+    else if(innerMetrics.coverage < 0.55) accuracyCap = currentDifficulty === 'hard' ? 52 : 60;
+
+    const finalAccuracyPercentage = Math.max(
+        0,
+        Math.min(accuracyCap, Math.round(rawAccuracy * 100 - missingInnerPenalty - offTemplatePenalty))
+    );
 
     let calculatedScore = 1;
-    if(finalAccuracyPercentage >= 92) calculatedScore = 20;
-    else if(finalAccuracyPercentage >= 88) calculatedScore = 19;
-    else if(finalAccuracyPercentage >= 84) calculatedScore = 18;
-    else if(finalAccuracyPercentage >= 80) calculatedScore = 17;
-    else if(finalAccuracyPercentage >= 76) calculatedScore = 16;
-    else if(finalAccuracyPercentage >= 72) calculatedScore = 15;
-    else if(finalAccuracyPercentage >= 68) calculatedScore = 14;
-    else if(finalAccuracyPercentage >= 64) calculatedScore = 13;
-    else if(finalAccuracyPercentage >= 60) calculatedScore = 12;
-    else if(finalAccuracyPercentage >= 56) calculatedScore = 11;
-    else if(finalAccuracyPercentage >= 52) calculatedScore = 10;
-    else if(finalAccuracyPercentage >= 48) calculatedScore = 9;
-    else if(finalAccuracyPercentage >= 44) calculatedScore = 8;
+    if(finalAccuracyPercentage >= 96) calculatedScore = 20;
+    else if(finalAccuracyPercentage >= 92) calculatedScore = 19;
+    else if(finalAccuracyPercentage >= 88) calculatedScore = 18;
+    else if(finalAccuracyPercentage >= 84) calculatedScore = 17;
+    else if(finalAccuracyPercentage >= 80) calculatedScore = 16;
+    else if(finalAccuracyPercentage >= 76) calculatedScore = 15;
+    else if(finalAccuracyPercentage >= 72) calculatedScore = 14;
+    else if(finalAccuracyPercentage >= 68) calculatedScore = 13;
+    else if(finalAccuracyPercentage >= 64) calculatedScore = 12;
+    else if(finalAccuracyPercentage >= 60) calculatedScore = 11;
+    else if(finalAccuracyPercentage >= 55) calculatedScore = 10;
+    else if(finalAccuracyPercentage >= 50) calculatedScore = 9;
+    else if(finalAccuracyPercentage >= 45) calculatedScore = 8;
     else if(finalAccuracyPercentage >= 40) calculatedScore = 7;
     else if(finalAccuracyPercentage >= 35) calculatedScore = 6;
     else if(finalAccuracyPercentage >= 30) calculatedScore = 5;
     else if(finalAccuracyPercentage >= 25) calculatedScore = 4;
     else if(finalAccuracyPercentage >= 20) calculatedScore = 3;
-    else if(finalAccuracyPercentage >= 15) calculatedScore = 2;
+    else if(finalAccuracyPercentage >= 10) calculatedScore = 2;
+    else if(finalAccuracyPercentage <= 10) calculatedScore = 1;
 
     let timePenalty = 0;
     if(activeLimit !== null){
@@ -1117,7 +1478,8 @@ function calculateScore(){
         else if(timeRatio > .82) timePenalty = 1;
     }
 
-    calculatedScore = Math.max(1, calculatedScore - timePenalty);
+    const scribblePenalty = cleanliness.offTemplateRatio > .42 ? 4 : cleanliness.offTemplateRatio > .30 ? 3 : cleanliness.offTemplateRatio > .20 ? 2 : cleanliness.offTemplateRatio > .12 ? 1 : 0;
+    calculatedScore = Math.max(1, calculatedScore - timePenalty - scribblePenalty);
 
     let rank = '';
     if(calculatedScore === 20) rank = 'Sucesso crítico';
@@ -1136,7 +1498,7 @@ function calculateScore(){
         accuracy: finalAccuracyPercentage,
         timeSpent: timeUsed.toFixed(1),
         difficulty: `${diffLabel} - ${simultaneousSymbolsCount} elementos (${labelTime})`,
-        penalty: timePenalty,
+        penalty: timePenalty + scribblePenalty,
         rank
     };
 }
